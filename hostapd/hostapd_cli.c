@@ -349,6 +349,65 @@ static int hostapd_cli_cmd_new_sta(struct wpa_ctrl *ctrl, int argc,
 }
 
 
+/* BEGIN HOSTAPD BLACKLIST SUPPORT */
+static int hostapd_cli_cmd_blacklist_add_hostapd(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	char buf[64];
+
+	if (argc != 1) {
+		printf("Invalid 'blacklist_add_hostapd' command - exactly one argument, STA address, is required.\n");
+		return -1;
+	}
+
+	os_snprintf(buf, sizeof(buf), "BLACKLIST_ADD %s", argv[0]);
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+static int hostapd_cli_cmd_blacklist_rm_hostapd(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	char buf[64];
+
+	if (argc != 1) {
+		printf("Invalid 'blacklist_rm_hostapd' command - exactly one argument, STA address, is required.\n");
+		return -1;
+	}
+
+	os_snprintf(buf, sizeof(buf), "BLACKLIST_RM %s", argv[0]);
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+static int hostapd_cli_cmd_blacklist_show(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	char buf[64];
+
+	if (argc > 0) {
+		printf("Invalid 'blacklist_show' command - this command takes no arguments.\n");
+		return -1;
+	}
+
+	os_snprintf(buf, sizeof(buf), "BLACKLIST_SHOW");
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+static int hostapd_cli_cmd_blacklist_clr_hostapd(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	char buf[64];
+
+	if (argc != 0) {
+		printf("Invalid 'blacklist_add_hostapd' command - exactly zero arguments is required.\n");
+		return -1;
+	}
+
+	os_snprintf(buf, sizeof(buf), "BLACKLIST_CLR");
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+/* END HOSTAPD BLACKLIST SUPPORT */
+
 static int hostapd_cli_cmd_deauthenticate(struct wpa_ctrl *ctrl, int argc,
 					  char *argv[])
 {
@@ -1226,7 +1285,6 @@ static int hostapd_cli_cmd_erp_flush(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, "ERP_FLUSH");
 }
 
-
 static int hostapd_cli_cmd_log_level(struct wpa_ctrl *ctrl, int argc,
 				     char *argv[])
 {
@@ -1381,6 +1439,14 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "signature", hostapd_cli_cmd_signature, NULL,
 	  "<addr> = get taxonomy signature for a station" },
 #endif /* CONFIG_TAXONOMY */
+	{ "blacklist_add", hostapd_cli_cmd_blacklist_add_hostapd, NULL,
+	  "<addr> = blacklist a station from an AP" },
+	{ "blacklist_rm", hostapd_cli_cmd_blacklist_rm_hostapd, NULL,
+	  "<addr> = remove a station from the blacklist" },
+	{ "blacklist_show", hostapd_cli_cmd_blacklist_show, NULL,
+	  "show entire blacklist" },
+	{ "blacklist_clr", hostapd_cli_cmd_blacklist_clr_hostapd, NULL,
+	  "clear all stations from the blacklist" },
 #ifdef CONFIG_IEEE80211W
 	{ "sa_query", hostapd_cli_cmd_sa_query, NULL,
 	  "<addr> = send SA Query to a station" },

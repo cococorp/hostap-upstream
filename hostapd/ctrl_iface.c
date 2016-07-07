@@ -2624,6 +2624,24 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "LOG_LEVEL", 9) == 0) {
 		reply_len = hostapd_ctrl_iface_log_level(
 			hapd, buf + 9, reply, reply_size);
+	/* BEGIN HOSTAPD BLACKLIST SUPPORT */
+	} else if (os_strncmp(buf, "BLACKLIST_ADD ", 14) == 0) {
+			if (hostapd_ctrl_iface_blacklist_add(hapd, buf + 14))
+				reply_len = -1;
+	} else if (os_strncmp(buf, "BLACKLIST_RM ", 13) == 0) {
+			if (hostapd_ctrl_iface_blacklist_rm(hapd, buf + 13))
+				reply_len = -1;
+	} else if (os_strcmp(buf, "BLACKLIST_SHOW") == 0) {
+		reply_len = hostapd_ctrl_iface_blacklist_show(hapd, reply,
+						reply_size);
+		if(reply_len == 0) {
+			os_memcpy(reply, "EMPTY\n", 6);
+			reply_len = 6;
+		}
+	} else if (os_strcmp(buf, "BLACKLIST_CLR") == 0) {
+		if(hostapd_ctrl_iface_blacklist_clr(hapd))
+			reply_len = -1;
+	/* END HOSTAPD BLACKLIST SUPPORT */
 #ifdef NEED_AP_MLME
 	} else if (os_strcmp(buf, "TRACK_STA_LIST") == 0) {
 		reply_len = hostapd_ctrl_iface_track_sta_list(
