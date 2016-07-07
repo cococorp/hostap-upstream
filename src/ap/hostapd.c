@@ -1839,6 +1839,7 @@ dfs_offload:
 	for (j = 0; j < iface->num_bss; j++)
 		hostapd_set_own_neighbor_report(iface->bss[j]);
 
+	hapd->blacklist = NULL;
 	return 0;
 
 fail:
