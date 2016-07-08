@@ -715,6 +715,24 @@ static int hostapd_cli_cmd_ess_disassoc(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, buf);
 }
 
+static int hostapd_cli_cmd_bss_transition(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	char buf[300];
+	int res;
+
+	if (argc < 4) {
+		printf("Invalid 'bss_transition' command - four arguments (STA "
+		       "addr, disassoc beacon timer, AP addr, AP channel) are needed\n");
+		return -1;
+	}
+
+	res = os_snprintf(buf, sizeof(buf), "BSS_TRANSITION %s %s %s %s",
+			  argv[0], argv[1], argv[2], argv[3]);
+	if (res < 0 || res >= (int) sizeof(buf))
+		return -1;
+	return wpa_ctrl_command(ctrl, buf);
+}
 
 static int hostapd_cli_cmd_bss_tm_req(struct wpa_ctrl *ctrl, int argc,
 				      char *argv[])
@@ -1393,6 +1411,7 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "wps_get_status", hostapd_cli_cmd_wps_get_status, NULL,
 	  "= show current WPS status" },
 #endif /* CONFIG_WPS */
+	{ "bss_transition", hostapd_cli_cmd_bss_transition, NULL, NULL },
 	{ "disassoc_imminent", hostapd_cli_cmd_disassoc_imminent, NULL, NULL },
 	{ "ess_disassoc", hostapd_cli_cmd_ess_disassoc, NULL, NULL },
 	{ "bss_tm_req", hostapd_cli_cmd_bss_tm_req, NULL, NULL },

@@ -99,7 +99,7 @@ struct sta_info {
 	u16 igtk_key_id;
 	u8 sae_auth_retry;
 #endif /* CONFIG_MESH */
-
+	unsigned int dot11MgmtOptionBSSTransitionActivated:1;
 	unsigned int nonerp_set:1;
 	unsigned int no_short_slot_time_set:1;
 	unsigned int no_short_preamble_set:1;
