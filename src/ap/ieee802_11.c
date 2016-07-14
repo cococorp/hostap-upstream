@@ -2384,7 +2384,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 
 static void handle_assoc(struct hostapd_data *hapd,
 			 const struct ieee80211_mgmt *mgmt, size_t len,
-			 int reassoc)
+			 int ssi_signal, int reassoc)
 {
 	u16 capab_info, listen_interval, seq_ctrl, fc;
 	u16 resp = WLAN_STATUS_SUCCESS, reply_res;
@@ -3044,12 +3044,12 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 		break;
 	case WLAN_FC_STYPE_ASSOC_REQ:
 		wpa_printf(MSG_DEBUG, "mgmt::assoc_req");
-		handle_assoc(hapd, mgmt, len, 0);
+		handle_assoc(hapd, mgmt, len, fi->ssi_signal, 0);
 		ret = 1;
 		break;
 	case WLAN_FC_STYPE_REASSOC_REQ:
 		wpa_printf(MSG_DEBUG, "mgmt::reassoc_req");
-		handle_assoc(hapd, mgmt, len, 1);
+		handle_assoc(hapd, mgmt, len, fi->ssi_signal, 1);
 		ret = 1;
 		break;
 	case WLAN_FC_STYPE_DISASSOC:
