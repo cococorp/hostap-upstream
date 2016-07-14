@@ -342,6 +342,11 @@ struct hostapd_bss_config {
 	int ft_psk_generate_local;
 #endif /* CONFIG_IEEE80211R_AP */
 
+#ifdef CONFIG_NET_STEERING
+	/* can be "off", "suggest", or "force" */
+	char *net_steeering_mode;
+#endif /* CONFIG_NET_STEERING */
+
 	char *ctrl_interface; /* directory for UNIX domain sockets */
 #ifndef CONFIG_NATIVE_WINDOWS
 	gid_t ctrl_interface_gid;
