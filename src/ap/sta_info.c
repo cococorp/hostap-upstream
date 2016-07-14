@@ -34,6 +34,7 @@
 #include "wnm_ap.h"
 #include "mbo_ap.h"
 #include "ndisc_snoop.h"
+#include "net_steering.h"
 #include "sta_info.h"
 #include "vlan.h"
 
@@ -296,6 +297,10 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 #ifdef CONFIG_P2P
 	p2p_group_notif_disassoc(hapd->p2p_group, sta->addr);
 #endif /* CONFIG_P2P */
+
+#ifdef CONFIG_NET_STEERING
+	net_steering_disassociation(hapd, sta);
+#endif  /* CONFIG_NET_STEERING */
 
 #ifdef CONFIG_INTERWORKING
 	if (sta->gas_dialog) {

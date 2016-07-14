@@ -85,6 +85,11 @@ static void hostapd_logger_cb(void *ctx, const u8 *addr, unsigned int module,
 	case HOSTAPD_MODULE_MLME:
 		module_str = "MLME";
 		break;
+#ifdef CONFIG_NET_STEERING
+	case HOSTAPD_MODULE_NET_STEERING:
+		module_str = "STEER";
+		break;
+#endif
 	default:
 		module_str = NULL;
 		break;
@@ -144,7 +149,7 @@ static void hostapd_logger_cb(void *ctx, const u8 *addr, unsigned int module,
 
 
 /**
- * hostapd_driver_init - Preparate driver interface
+ * hostapd_driver_init - Prepare driver interface
  */
 static int hostapd_driver_init(struct hostapd_iface *iface)
 {
