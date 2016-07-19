@@ -2248,7 +2248,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 #ifdef CONFIG_NET_STEERING
 	/* TODO pass in ssi_signal */
+<<<<<<< HEAD
 	net_steering_association(hapd, sta, ssi_signal);
+=======
+	net_steering_association(hapd, sta, -1);
+>>>>>>> a58a601... Steering: Implement network steering capability for multi-AP deployments. Requires station
 #endif  /* CONFIG_NET_STEERING */
 
 	/* Make sure that the previously registered inactivity timer will not
