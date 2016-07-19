@@ -2621,7 +2621,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 #ifdef CONFIG_NET_STEERING
 	/* TODO pass in ssi_signal */
-	net_steering_association(hapd, sta, -1);
+	net_steering_association(hapd, sta, ssi_signal);
 #endif  /* CONFIG_NET_STEERING */
 
 	/* Make sure that the previously registered inactivity timer will not
