@@ -3468,6 +3468,17 @@ static int nl80211_put_beacon_int(struct nl_msg *msg, int beacon_int)
 }
 
 
+static int nl80211_put_dtim_period(struct nl_msg *msg, int dtim_period)
+{
+	if (dtim_period > 0) {
+		wpa_printf(MSG_DEBUG, "  * dtim_period=%d", dtim_period);
+		return nla_put_u32(msg, NL80211_ATTR_DTIM_PERIOD, dtim_period);
+	}
+
+	return 0;
+}
+
+
 static int wpa_driver_nl80211_set_ap(void *priv,
 				     struct wpa_driver_ap_params *params)
 {
@@ -3504,7 +3515,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 	    nla_put(msg, NL80211_ATTR_BEACON_TAIL, params->tail_len,
 		    params->tail) ||
 	    nl80211_put_beacon_int(msg, params->beacon_int) ||
-	    nla_put_u32(msg, NL80211_ATTR_DTIM_PERIOD, params->dtim_period) ||
+	    nl80211_put_dtim_period(msg, params->dtim_period) ||
 	    nla_put(msg, NL80211_ATTR_SSID, params->ssid_len, params->ssid))
 		goto fail;
 	if (params->proberesp && params->proberesp_len) {
@@ -3695,7 +3706,7 @@ static int wpa_driver_nl80211_set_ap(void *priv,
 					   "nl80211: Frequency set succeeded for ht2040 coex");
 				bss->bandwidth = params->freq->bandwidth;
 			}
-		} else if (!beacon_set) {
+		} else if (!beacon_set && params->freq) {
 			/*
 			 * cfg80211 updates the driver on frequence change in AP
 			 * mode only at the point when beaconing is started, so
@@ -3776,6 +3787,12 @@ static int nl80211_put_freq_params(struct nl_msg *msg,
 
 		wpa_printf(MSG_DEBUG, "  * channel_type=%d", ct);
 		if (nla_put_u32(msg, NL80211_ATTR_WIPHY_CHANNEL_TYPE, ct))
+			return -ENOBUFS;
+	} else {
+		wpa_printf(MSG_DEBUG, "  * channel_type=%d",
+			   NL80211_CHAN_NO_HT);
+		if (nla_put_u32(msg, NL80211_ATTR_WIPHY_CHANNEL_TYPE,
+				NL80211_CHAN_NO_HT))
 			return -ENOBUFS;
 	}
 	return 0;
@@ -4032,6 +4049,15 @@ static int wpa_driver_nl80211_sta_add(void *priv,
 			if (!(params->flags & WPA_STA_ASSOCIATED))
 				upd.mask |= BIT(NL80211_STA_FLAG_ASSOCIATED);
 		}
+#ifdef CONFIG_MESH
+	} else {
+		if (params->plink_state == PLINK_ESTAB && params->peer_aid) {
+			ret = nla_put_u16(msg, NL80211_ATTR_MESH_PEER_AID,
+					  params->peer_aid);
+			if (ret)
+				goto fail;
+		}
+#endif /* CONFIG_MESH */
 	}
 
 	wpa_printf(MSG_DEBUG, "  * flags set=0x%x mask=0x%x",
@@ -8391,7 +8417,8 @@ static int nl80211_join_mesh(struct i802_bss *bss,
 	    nl80211_put_freq_params(msg, &params->freq) ||
 	    nl80211_put_basic_rates(msg, params->basic_rates) ||
 	    nl80211_put_mesh_id(msg, params->meshid, params->meshid_len) ||
-	    nl80211_put_beacon_int(msg, params->beacon_int))
+	    nl80211_put_beacon_int(msg, params->beacon_int) ||
+	    nl80211_put_dtim_period(msg, params->dtim_period))
 		goto fail;
 
 	wpa_printf(MSG_DEBUG, "  * flags=%08X", params->flags);
@@ -9442,6 +9469,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
 	.set_prob_oper_freq = nl80211_set_prob_oper_freq,
 	.p2p_lo_start = nl80211_p2p_lo_start,
 	.p2p_lo_stop = nl80211_p2p_lo_stop,
+	.set_default_scan_ies = nl80211_set_default_scan_ies,
 #endif /* CONFIG_DRIVER_NL80211_QCA */
 	.configure_data_frame_filters = nl80211_configure_data_frame_filters,
 	.get_ext_capab = nl80211_get_ext_capab,

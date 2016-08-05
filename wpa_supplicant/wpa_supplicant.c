@@ -1873,6 +1873,13 @@ void ibss_mesh_setup_freq(struct wpa_supplicant *wpa_s,
 	if (!mode)
 		return;
 
+#ifdef CONFIG_HT_OVERRIDES
+	if (ssid->disable_ht) {
+		freq->ht_enabled = 0;
+		return;
+	}
+#endif /* CONFIG_HT_OVERRIDES */
+
 	freq->ht_enabled = ht_supported(mode);
 	if (!freq->ht_enabled)
 		return;
@@ -4867,6 +4874,8 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_MBO
 	wpas_mbo_update_non_pref_chan(wpa_s, wpa_s->conf->non_pref_chan);
 #endif /* CONFIG_MBO */
+
+	wpa_supplicant_set_default_scan_ies(wpa_s);
 
 	return 0;
 }

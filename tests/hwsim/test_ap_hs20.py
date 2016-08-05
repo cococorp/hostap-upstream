@@ -23,7 +23,7 @@ from tshark import run_tshark
 from wlantest import Wlantest
 from wpasupplicant import WpaSupplicant
 from test_ap_eap import check_eap_capa, check_domain_match_full
-from test_gas import gas_rx, parse_gas, action_response, send_gas_resp, ACTION_CATEG_PUBLIC, GAS_INITIAL_RESPONSE
+from test_gas import gas_rx, parse_gas, action_response, anqp_initial_resp, send_gas_resp, ACTION_CATEG_PUBLIC, GAS_INITIAL_RESPONSE
 
 def hs20_ap_params(ssid="test-hs20"):
     params = hostapd.wpa2_params(ssid=ssid)
@@ -212,6 +212,60 @@ def test_ap_anqp_sharing(dev, apdev):
     res2 = dev[0].get_bss(bssid2)
     if res1['anqp_nai_realm'] == res2['anqp_nai_realm']:
         raise Exception("ANQP results were not unshared")
+
+def test_ap_anqp_no_sharing_diff_ess(dev, apdev):
+    """ANQP no sharing between ESSs"""
+    check_eap_capa(dev[0], "MSCHAPV2")
+    dev[0].flush_scan_cache()
+
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    hostapd.add_ap(apdev[0], params)
+
+    bssid2 = apdev[1]['bssid']
+    params = hs20_ap_params(ssid="test-hs20-another")
+    params['hessid'] = bssid
+    params['nai_realm'] = [ "0,example.com,13[5:6],21[2:4][5:7]" ]
+    hostapd.add_ap(apdev[1], params)
+
+    dev[0].hs20_enable()
+    id = dev[0].add_cred_values({ 'realm': "example.com", 'username': "test",
+                                  'password': "secret",
+                                  'domain': "example.com" })
+    logger.info("Normal network selection with shared ANQP results")
+    dev[0].scan_for_bss(bssid, freq="2412")
+    dev[0].scan_for_bss(bssid2, freq="2412")
+    interworking_select(dev[0], None, "home", freq="2412")
+
+def test_ap_anqp_no_sharing_missing_info(dev, apdev):
+    """ANQP no sharing due to missing information"""
+    check_eap_capa(dev[0], "MSCHAPV2")
+    dev[0].flush_scan_cache()
+
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    del params['roaming_consortium']
+    del params['domain_name']
+    del params['anqp_3gpp_cell_net']
+    del params['nai_realm']
+    hostapd.add_ap(apdev[0], params)
+
+    bssid2 = apdev[1]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    params['nai_realm'] = [ "0,example.com,13[5:6],21[2:4][5:7]" ]
+    hostapd.add_ap(apdev[1], params)
+
+    dev[0].hs20_enable()
+    id = dev[0].add_cred_values({ 'realm': "example.com", 'username': "test",
+                                  'password': "secret",
+                                  'domain': "example.com" })
+    logger.info("Normal network selection with shared ANQP results")
+    dev[0].scan_for_bss(bssid, freq="2412")
+    dev[0].scan_for_bss(bssid2, freq="2412")
+    interworking_select(dev[0], None, "home", freq="2412")
 
 def test_ap_anqp_sharing_oom(dev, apdev):
     """ANQP sharing within ESS and explicit unshare OOM"""
@@ -762,6 +816,11 @@ def test_ap_hs20_eap_ttls_mschap(dev, apdev):
     skip_with_fips(dev[0])
     eap_test(dev[0], apdev[0], "21[2:3]", "TTLS", "mschap user")
 
+def test_ap_hs20_eap_ttls_default(dev, apdev):
+    """Hotspot 2.0 connection with TTLS/default"""
+    skip_with_fips(dev[0])
+    eap_test(dev[0], apdev[0], "21", "TTLS", "hs20-test")
+
 def test_ap_hs20_eap_ttls_eap_mschapv2(dev, apdev):
     """Hotspot 2.0 connection with TTLS/EAP-MSCHAPv2"""
     check_eap_capa(dev[0], "MSCHAPV2")
@@ -934,6 +993,233 @@ def test_ap_hs20_roaming_consortium_invalid(dev, apdev):
                                   'roaming_consortium': "fedcba",
                                   'eap': "PEAP" })
     interworking_select(dev[0], bssid, "home", freq="2412", no_match=True)
+
+def test_ap_hs20_roaming_consortium_element(dev, apdev):
+    """Hotspot 2.0 connection and invalid roaming consortium element"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    del params['roaming_consortium']
+    params['vendor_elements'] = '6f00'
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dev[0].scan_for_bss(bssid, freq="2412")
+    id = dev[0].add_cred_values({ 'username': "user",
+                                  'password': "password",
+                                  'domain': "example.com",
+                                  'ca_cert': "auth_serv/ca.pem",
+                                  'roaming_consortium': "112233",
+                                  'eap': "PEAP" })
+    interworking_select(dev[0], bssid, freq="2412", no_match=True)
+
+    hapd.set('vendor_elements', '6f020001')
+    if "OK" not in hapd.request("UPDATE_BEACON"):
+        raise Exception("UPDATE_BEACON failed")
+    dev[0].request("BSS_FLUSH 0")
+    dev[0].scan_for_bss(bssid, freq="2412", force_scan=True)
+    interworking_select(dev[0], bssid, freq="2412", no_match=True)
+
+def test_ap_hs20_roaming_consortium_constraints(dev, apdev):
+    """Hotspot 2.0 connection and roaming consortium constraints"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    params['bss_load_test'] = "12:200:20000"
+    hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+
+    vals = { 'username': "user",
+             'password': "password",
+             'domain': "example.com",
+             'ca_cert': "auth_serv/ca.pem",
+             'roaming_consortium': "fedcba",
+             'eap': "TTLS" }
+    vals2 = vals.copy()
+    vals2['required_roaming_consortium'] = "223344"
+    id = dev[0].add_cred_values(vals2)
+    interworking_select(dev[0], bssid, "home", freq="2412", no_match=True)
+    dev[0].remove_cred(id)
+
+    vals2 = vals.copy()
+    vals2['min_dl_bandwidth_home'] = "65500"
+    id = dev[0].add_cred_values(vals2)
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    if "below_min_backhaul=1" not in ev:
+        raise Exception("below_min_backhaul not reported")
+    dev[0].remove_cred(id)
+
+    vals2 = vals.copy()
+    vals2['max_bss_load'] = "100"
+    id = dev[0].add_cred_values(vals2)
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    if "over_max_bss_load=1" not in ev:
+        raise Exception("over_max_bss_load not reported")
+    dev[0].remove_cred(id)
+
+    vals2 = vals.copy()
+    vals2['req_conn_capab'] = "6:1234"
+    vals2['domain'] = 'example.org'
+    id = dev[0].add_cred_values(vals2)
+
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    if "conn_capab_missing=1" not in ev:
+        raise Exception("conn_capab_missing not reported")
+    dev[0].remove_cred(id)
+
+    values = default_cred()
+    values['roaming_consortium'] = "fedcba"
+    id3 = dev[0].add_cred_values(values)
+
+    vals2 = vals.copy()
+    vals2['roaming_consortium'] = "fedcba"
+    vals2['priority'] = "2"
+    id = dev[0].add_cred_values(vals2)
+
+    values = default_cred()
+    values['roaming_consortium'] = "fedcba"
+    id2 = dev[0].add_cred_values(values)
+
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    dev[0].remove_cred(id)
+    dev[0].remove_cred(id2)
+    dev[0].remove_cred(id3)
+
+def test_ap_hs20_3gpp_constraints(dev, apdev):
+    """Hotspot 2.0 connection and 3GPP credential constraints"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    params['anqp_3gpp_cell_net'] = "555,444"
+    params['domain_name'] = "wlan.mnc444.mcc555.3gppnetwork.org"
+    params['bss_load_test'] = "12:200:20000"
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+
+    vals = { 'imsi': "555444-333222111",
+             'eap': "SIM",
+             'milenage': "5122250214c33e723a5dd523fc145fc0:981d464c7c52eb6e5036234984ad0bcf:000000000123" }
+    vals2 = vals.copy()
+    vals2['required_roaming_consortium'] = "223344"
+    id = dev[0].add_cred_values(vals2)
+    interworking_select(dev[0], bssid, "home", freq="2412", no_match=True)
+    dev[0].remove_cred(id)
+
+    vals2 = vals.copy()
+    vals2['min_dl_bandwidth_home'] = "65500"
+    id = dev[0].add_cred_values(vals2)
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    if "below_min_backhaul=1" not in ev:
+        raise Exception("below_min_backhaul not reported")
+    dev[0].remove_cred(id)
+
+    vals2 = vals.copy()
+    vals2['max_bss_load'] = "100"
+    id = dev[0].add_cred_values(vals2)
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    if "over_max_bss_load=1" not in ev:
+        raise Exception("over_max_bss_load not reported")
+    dev[0].remove_cred(id)
+
+    values = default_cred()
+    values['roaming_consortium'] = "fedcba"
+    id3 = dev[0].add_cred_values(values)
+
+    vals2 = vals.copy()
+    vals2['roaming_consortium'] = "fedcba"
+    vals2['priority'] = "2"
+    id = dev[0].add_cred_values(vals2)
+
+    values = default_cred()
+    values['roaming_consortium'] = "fedcba"
+    id2 = dev[0].add_cred_values(values)
+
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    dev[0].remove_cred(id)
+    dev[0].remove_cred(id2)
+    dev[0].remove_cred(id3)
+
+    hapd.disable()
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    params['anqp_3gpp_cell_net'] = "555,444"
+    params['bss_load_test'] = "12:200:20000"
+    hapd = hostapd.add_ap(apdev[0], params)
+    vals2 = vals.copy()
+    vals2['req_conn_capab'] = "6:1234"
+    id = dev[0].add_cred_values(vals2)
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    if "conn_capab_missing=1" not in ev:
+        raise Exception("conn_capab_missing not reported")
+    dev[0].remove_cred(id)
+
+def test_ap_hs20_connect_no_full_match(dev, apdev):
+    """Hotspot 2.0 connection and no full match"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    params['anqp_3gpp_cell_net'] = "555,444"
+    hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+
+    vals = { 'username': "user",
+             'password': "password",
+             'domain': "example.com",
+             'ca_cert': "auth_serv/ca.pem",
+             'roaming_consortium': "fedcba",
+             'eap': "TTLS",
+             'min_dl_bandwidth_home': "65500" }
+    id = dev[0].add_cred_values(vals)
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    if "below_min_backhaul=1" not in ev:
+        raise Exception("below_min_backhaul not reported")
+    interworking_connect(dev[0], bssid, "TTLS")
+    dev[0].remove_cred(id)
+    dev[0].wait_disconnected()
+
+    vals = { 'imsi': "555444-333222111", 'eap': "SIM",
+             'milenage': "5122250214c33e723a5dd523fc145fc0:981d464c7c52eb6e5036234984ad0bcf:000000000123",
+             'min_dl_bandwidth_roaming': "65500" }
+    id = dev[0].add_cred_values(vals)
+    dev[0].request("INTERWORKING_SELECT freq=2412")
+    ev = dev[0].wait_event(["INTERWORKING-AP"], timeout=15)
+    if ev is None:
+        raise Exception("No AP found")
+    if "below_min_backhaul=1" not in ev:
+        raise Exception("below_min_backhaul not reported")
+    interworking_connect(dev[0], bssid, "SIM")
+    dev[0].remove_cred(id)
+    dev[0].wait_disconnected()
 
 def test_ap_hs20_username_roaming(dev, apdev):
     """Hotspot 2.0 connection in username/password credential (roaming)"""
@@ -1806,6 +2092,20 @@ def test_ap_hs20_req_conn_capab(dev, apdev):
         if bssid2 in ev and "conn_capab_missing=1" in ev:
             raise Exception("Protocol connection capability not reported correctly")
 
+def test_ap_hs20_req_conn_capab2(dev, apdev):
+    """Hotspot 2.0 network selection with req_conn_capab (not present)"""
+    check_eap_capa(dev[0], "MSCHAPV2")
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    del params['hs20_conn_capab']
+    hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dev[0].scan_for_bss(bssid, freq="2412")
+    values = conn_capab_cred(domain="example.org", req_conn_capab="6:1234")
+    id = dev[0].add_cred_values(values)
+    check_conn_capab_selection(dev[0], "roaming", False)
+
 def test_ap_hs20_req_conn_capab_and_roaming_partner_preference(dev, apdev):
     """Hotspot 2.0 and req_conn_capab with roaming partner preference"""
     check_eap_capa(dev[0], "MSCHAPV2")
@@ -2133,6 +2433,19 @@ def _test_ap_hs20_deauth_req_from_radius(dev, apdev):
     if " 1 100" not in ev:
         raise Exception("Unexpected deauth imminent contents")
     dev[0].wait_disconnected(timeout=3)
+
+def test_ap_hs20_deauth_req_without_pmf(dev, apdev):
+    """Hotspot 2.0 connection and deauthentication request without PMF"""
+    check_eap_capa(dev[0], "MSCHAPV2")
+    dev[0].request("SET pmf 0")
+    eap_test(dev[0], apdev[0], "21[3:26]", "TTLS", "user")
+    dev[0].dump_monitor()
+    addr = dev[0].own_addr()
+    hapd = hostapd.Hostapd(apdev[0]['ifname'])
+    hapd.request("HS20_DEAUTH_REQ " + addr + " 1 120 http://example.com/")
+    ev = dev[0].wait_event(["HS20-DEAUTH-IMMINENT-NOTICE"], timeout=0.2)
+    if ev is not None:
+        raise Exception("Deauth imminent notice without PMF accepted")
 
 def test_ap_hs20_remediation_required(dev, apdev):
     """Hotspot 2.0 connection and remediation required from RADIUS"""
@@ -2567,6 +2880,12 @@ def test_ap_hs20_fetch_osu(dev, apdev):
         raise Exception("GET_HS20_ICON 5..15 failed")
     if "FAIL" not in  dev[2].request("GET_HS20_ICON " + bssid + " w1fi_logo 100000 10"):
         raise Exception("Unexpected success of GET_HS20_ICON with too large offset")
+    if "FAIL" not in dev[2].request("GET_HS20_ICON " + bssid + " no_such_logo 0 10"):
+        raise Exception("GET_HS20_ICON for not existing icon succeeded")
+    if "FAIL" not in dev[2].request("GET_HS20_ICON " + bssid + " w1fi_logo 0 3070"):
+        raise Exception("GET_HS20_ICON with too many output bytes to fit the buffer succeeded")
+    if "FAIL" not in dev[2].request("GET_HS20_ICON " + bssid + " w1fi_logo 0 0"):
+        raise Exception("GET_HS20_ICON 0..0 succeeded")
     icon = ""
     pos = 0
     while True:
@@ -2611,6 +2930,43 @@ def test_ap_hs20_fetch_osu_no_info(dev, apdev):
     """Hotspot 2.0 OSU provider and no AP with info"""
     bssid = apdev[0]['bssid']
     params = hs20_ap_params()
+    hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dir = "/tmp/osu-fetch"
+    if os.path.isdir(dir):
+       files = [ f for f in os.listdir(dir) if f.startswith("osu-") ]
+       for f in files:
+           os.remove(dir + "/" + f)
+    else:
+        try:
+            os.makedirs(dir)
+        except:
+            pass
+    dev[0].scan_for_bss(bssid, freq="2412")
+    try:
+        dev[0].request("SET osu_dir " + dir)
+        dev[0].request("FETCH_OSU")
+        ev = dev[0].wait_event(["OSU provider fetch completed"], timeout=30)
+        if ev is None:
+            raise Exception("Timeout on OSU fetch")
+    finally:
+        files = [ f for f in os.listdir(dir) if f.startswith("osu-") ]
+        for f in files:
+            os.remove(dir + "/" + f)
+        os.rmdir(dir)
+
+def test_ap_hs20_fetch_osu_no_icon(dev, apdev):
+    """Hotspot 2.0 OSU provider and no icon found"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hs20_icon'] = "128:80:zxx:image/png:w1fi_logo:w1fi_logo-no-file.png"
+    params['osu_ssid'] = '"HS 2.0 OSU open"'
+    params['osu_method_list'] = "1"
+    params['osu_friendly_name'] = [ "eng:Test OSU", "fin:Testi-OSU" ]
+    params['osu_icon'] = "w1fi_logo"
+    params['osu_service_desc'] = [ "eng:Example services", "fin:Esimerkkipalveluja" ]
+    params['osu_server_uri'] = "https://example.com/osu/"
     hostapd.add_ap(apdev[0], params)
 
     dev[0].hs20_enable()
@@ -2703,6 +3059,58 @@ def test_ap_hs20_req_hs20_icon(dev, apdev):
         raise Exception("DEL_HS20_ICON failed")
     if "OK" not in dev[0].request("DEL_HS20_ICON " + bssid + " test_logo"):
         raise Exception("DEL_HS20_ICON failed")
+
+def test_ap_hs20_req_hs20_icon_oom(dev, apdev):
+    """Hotspot 2.0 icon fetch OOM with REQ_HS20_ICON"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hs20_icon'] = [ "128:80:zxx:image/png:w1fi_logo:w1fi_logo.png",
+                            "128:80:zxx:image/png:test_logo:auth_serv/sha512-server.pem" ]
+    params['osu_ssid'] = '"HS 2.0 OSU open"'
+    params['osu_method_list'] = "1"
+    params['osu_friendly_name'] = [ "eng:Test OSU", "fin:Testi-OSU" ]
+    params['osu_icon'] = [ "w1fi_logo", "w1fi_logo2" ]
+    params['osu_service_desc'] = [ "eng:Example services", "fin:Esimerkkipalveluja" ]
+    params['osu_server_uri'] = "https://example.com/osu/"
+    hostapd.add_ap(apdev[0], params)
+
+    dev[0].scan_for_bss(bssid, freq="2412")
+
+    if "FAIL" not in dev[0].request("REQ_HS20_ICON 11:22:33:44:55:66 w1fi_logo"):
+        raise Exception("REQ_HS20_ICON succeeded with unknown BSSID")
+
+    with alloc_fail(dev[0], 1, "hs20_build_anqp_req;hs20_anqp_send_req"):
+        if "FAIL" not in dev[0].request("REQ_HS20_ICON " + bssid + " w1fi_logo"):
+            raise Exception("REQ_HS20_ICON succeeded during OOM")
+
+    with alloc_fail(dev[0], 1, "gas_query_req;hs20_anqp_send_req"):
+        if "FAIL" not in dev[0].request("REQ_HS20_ICON " + bssid + " w1fi_logo"):
+            raise Exception("REQ_HS20_ICON succeeded during OOM")
+
+    with alloc_fail(dev[0], 1, "=hs20_anqp_send_req"):
+        if "FAIL" not in dev[0].request("REQ_HS20_ICON " + bssid + " w1fi_logo"):
+            raise Exception("REQ_HS20_ICON succeeded during OOM")
+    with alloc_fail(dev[0], 2, "=hs20_anqp_send_req"):
+        if "FAIL" not in dev[0].request("REQ_HS20_ICON " + bssid + " w1fi_logo"):
+            raise Exception("REQ_HS20_ICON succeeded during OOM")
+
+    if "OK" not in dev[0].request("REQ_HS20_ICON " + bssid + " w1fi_logo"):
+        raise Exception("REQ_HS20_ICON failed")
+    ev = dev[0].wait_event(["RX-HS20-ICON"], timeout=5)
+    if ev is None:
+        raise Exception("Timeout on RX-HS20-ICON (1)")
+
+    with alloc_fail(dev[0], 1, "hs20_get_icon"):
+        if "FAIL" not in dev[0].request("GET_HS20_ICON " + bssid + "w1fi_logo 0 100"):
+            raise Exception("GET_HS20_ICON succeeded during OOM")
+
+    if "OK" not in dev[0].request("DEL_HS20_ICON " + bssid + " w1fi_logo"):
+        raise Exception("DEL_HS20_ICON failed")
+
+    with alloc_fail(dev[0], 1, "=hs20_process_icon_binary_file"):
+        if "OK" not in dev[0].request("REQ_HS20_ICON " + bssid + " w1fi_logo"):
+            raise Exception("REQ_HS20_ICON failed")
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
 
 def test_ap_hs20_req_hs20_icon_parallel(dev, apdev):
     """Hotspot 2.0 OSU provider and multi-icon parallel fetch with REQ_HS20_ICON"""
@@ -2840,6 +3248,225 @@ def test_ap_hs20_fetch_osu_stop(dev, apdev):
         for f in files:
             os.remove(dir + "/" + f)
         os.rmdir(dir)
+
+def test_ap_hs20_fetch_osu_proto(dev, apdev):
+    """Hotspot 2.0 OSU provider and protocol testing"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dir = "/tmp/osu-fetch"
+    if os.path.isdir(dir):
+       files = [ f for f in os.listdir(dir) if f.startswith("osu-") ]
+       for f in files:
+           os.remove(dir + "/" + f)
+    else:
+        try:
+            os.makedirs(dir)
+        except:
+            pass
+
+    tests = [ ( "Empty provider list (no OSU SSID field)", '' ),
+              ( "HS 2.0: Not enough room for OSU SSID",
+                binascii.unhexlify('01') ),
+              ( "HS 2.0: Invalid OSU SSID Length 33",
+                binascii.unhexlify('21') + 33*'A' ),
+              ( "HS 2.0: Not enough room for Number of OSU Providers",
+                binascii.unhexlify('0130') ),
+              ( "Truncated OSU Provider",
+                binascii.unhexlify('013001020000') ),
+              ( "HS 2.0: Ignored 5 bytes of extra data after OSU Providers",
+                binascii.unhexlify('0130001122334455') ),
+              ( "HS 2.0: Not enough room for OSU Friendly Name Length",
+                binascii.unhexlify('013001000000') ),
+              ( "HS 2.0: Not enough room for OSU Friendly Name Duples",
+                build_prov('0100') ),
+              ( "Invalid OSU Friendly Name", build_prov('040000000000') ),
+              ( "Invalid OSU Friendly Name(2)", build_prov('040004000000') ),
+              ( "HS 2.0: Not enough room for OSU Server URI length",
+                build_prov('0000') ),
+              ( "HS 2.0: Not enough room for OSU Server URI",
+                build_prov('000001') ),
+              ( "HS 2.0: Not enough room for OSU Method list length",
+                build_prov('000000') ),
+              ( "HS 2.0: Not enough room for OSU Method list",
+                build_prov('00000001') ),
+              ( "HS 2.0: Not enough room for Icons Available Length",
+                build_prov('00000000') ),
+              ( "HS 2.0: Not enough room for Icons Available Length(2)",
+                build_prov('00000001ff00') ),
+              ( "HS 2.0: Not enough room for Icons Available",
+                build_prov('000000000100') ),
+              ( "HS 2.0: Invalid Icon Metadata",
+                build_prov('00000000010000') ),
+              ( "HS 2.0: Not room for Icon Type",
+                build_prov('000000000900111122223333330200') ),
+              ( "HS 2.0: Not room for Icon Filename length",
+                build_prov('000000000900111122223333330100') ),
+              ( "HS 2.0: Not room for Icon Filename",
+                build_prov('000000000900111122223333330001') ),
+              ( "HS 2.0: Not enough room for OSU_NAI",
+                build_prov('000000000000') ),
+              ( "HS 2.0: Not enough room for OSU_NAI(2)",
+                build_prov('00000000000001') ),
+              ( "HS 2.0: Not enough room for OSU Service Description Length",
+                build_prov('00000000000000') ),
+              ( "HS 2.0: Not enough room for OSU Service Description Length(2)",
+                build_prov('0000000000000000') ),
+              ( "HS 2.0: Not enough room for OSU Service Description Duples",
+                build_prov('000000000000000100') ),
+              ( "Invalid OSU Service Description",
+                build_prov('00000000000000040000000000') ),
+              ( "Invalid OSU Service Description(2)",
+                build_prov('00000000000000040004000000') ) ]
+
+    try:
+        dev[0].request("SET osu_dir " + dir)
+        run_fetch_osu_icon_failure(hapd, dev, bssid)
+        for note, prov in tests:
+            run_fetch_osu(hapd, dev, bssid, note, prov)
+    finally:
+        files = [ f for f in os.listdir(dir) if f.startswith("osu-") ]
+        for f in files:
+            os.remove(dir + "/" + f)
+        os.rmdir(dir)
+
+def test_ap_hs20_fetch_osu_invalid_dir(dev, apdev):
+    """Hotspot 2.0 OSU provider and invalid directory"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hs20_icon'] = "128:80:zxx:image/png:w1fi_logo:w1fi_logo.png"
+    params['osu_ssid'] = '"HS 2.0 OSU open"'
+    params['osu_method_list'] = "1"
+    params['osu_friendly_name'] = [ "eng:Test OSU", "fin:Testi-OSU" ]
+    params['osu_icon'] = "w1fi_logo"
+    params['osu_service_desc'] = [ "eng:Example services", "fin:Esimerkkipalveluja" ]
+    params['osu_server_uri'] = "https://example.com/osu/"
+    hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dir = "/tmp/osu-fetch-no-such-dir"
+    dev[0].scan_for_bss(bssid, freq="2412")
+    dev[0].request("SET osu_dir " + dir)
+    dev[0].request("FETCH_OSU no-scan")
+    ev = dev[0].wait_event(["Could not write OSU provider information"],
+                           timeout=15)
+    if ev is None:
+        raise Exception("Timeout on OSU fetch")
+
+def test_ap_hs20_fetch_osu_oom(dev, apdev):
+    """Hotspot 2.0 OSU provider and OOM"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hs20_icon'] = "128:80:zxx:image/png:w1fi_logo:w1fi_logo.png"
+    params['osu_ssid'] = '"HS 2.0 OSU open"'
+    params['osu_method_list'] = "1"
+    params['osu_friendly_name'] = [ "eng:Test OSU", "fin:Testi-OSU" ]
+    params['osu_icon'] = "w1fi_logo"
+    params['osu_service_desc'] = [ "eng:Example services", "fin:Esimerkkipalveluja" ]
+    params['osu_server_uri'] = "https://example.com/osu/"
+    hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dir = "/tmp/osu-fetch"
+    if os.path.isdir(dir):
+       files = [ f for f in os.listdir(dir) if f.startswith("osu-") ]
+       for f in files:
+           os.remove(dir + "/" + f)
+    else:
+        try:
+            os.makedirs(dir)
+        except:
+            pass
+    dev[0].scan_for_bss(bssid, freq="2412")
+    try:
+        dev[0].request("SET osu_dir " + dir)
+        with alloc_fail(dev[0], 1, "=hs20_osu_add_prov"):
+            dev[0].request("FETCH_OSU no-scan")
+            ev = dev[0].wait_event(["OSU provider fetch completed"], timeout=30)
+            if ev is None:
+                raise Exception("Timeout on OSU fetch")
+        with alloc_fail(dev[0], 1, "hs20_anqp_send_req;hs20_next_osu_icon"):
+            dev[0].request("FETCH_OSU no-scan")
+            ev = dev[0].wait_event(["OSU provider fetch completed"], timeout=30)
+            if ev is None:
+                raise Exception("Timeout on OSU fetch")
+    finally:
+        files = [ f for f in os.listdir(dir) if f.startswith("osu-") ]
+        for f in files:
+            os.remove(dir + "/" + f)
+        os.rmdir(dir)
+
+def build_prov(prov):
+    data = binascii.unhexlify(prov)
+    return binascii.unhexlify('013001') + struct.pack('<H', len(data)) + data
+
+def handle_osu_prov_fetch(hapd, dev, prov):
+    # GAS/ANQP query for OSU Providers List
+    query = gas_rx(hapd)
+    gas = parse_gas(query['payload'])
+    dialog_token = gas['dialog_token']
+
+    resp = action_response(query)
+    osu_prov = struct.pack('<HH', 0xdddd, len(prov) + 6) + binascii.unhexlify('506f9a110800') + prov
+    data = struct.pack('<H', len(osu_prov)) + osu_prov
+    resp['payload'] = anqp_initial_resp(dialog_token, 0) + data
+    send_gas_resp(hapd, resp)
+
+    ev = dev[0].wait_event(["RX-HS20-ANQP"], timeout=5)
+    if ev is None:
+        raise Exception("ANQP query response for OSU Providers not received")
+    if "OSU Providers list" not in ev:
+        raise Exception("ANQP query response for OSU Providers not received(2)")
+    ev = dev[0].wait_event(["ANQP-QUERY-DONE"], timeout=5)
+    if ev is None:
+        raise Exception("ANQP query for OSU Providers list not completed")
+
+def start_osu_fetch(hapd, dev, bssid, note):
+    hapd.set("ext_mgmt_frame_handling", "0")
+    dev[0].request("BSS_FLUSH 0")
+    dev[0].scan_for_bss(bssid, freq="2412")
+    hapd.set("ext_mgmt_frame_handling", "1")
+    dev[0].dump_monitor()
+    dev[0].request("NOTE " + note)
+    dev[0].request("FETCH_OSU no-scan")
+
+def wait_osu_fetch_completed(dev):
+    ev = dev[0].wait_event(["OSU provider fetch completed"], timeout=5)
+    if ev is None:
+        raise Exception("Timeout on OSU fetch")
+
+def run_fetch_osu_icon_failure(hapd, dev, bssid):
+    start_osu_fetch(hapd, dev, bssid, "Icon fetch failure")
+
+    prov = binascii.unhexlify('01ff' + '01' + '800019000b656e6754657374204f53550c66696e54657374692d4f53551868747470733a2f2f6578616d706c652e636f6d2f6f73752f01011b00800050007a787809696d6167652f706e6709773166695f6c6f676f002a0013656e674578616d706c652073657276696365731566696e4573696d65726b6b6970616c76656c756a61')
+    handle_osu_prov_fetch(hapd, dev, prov)
+
+    # GAS/ANQP query for icon
+    query = gas_rx(hapd)
+    gas = parse_gas(query['payload'])
+    dialog_token = gas['dialog_token']
+
+    resp = action_response(query)
+    # Unexpected Advertisement Protocol in response
+    adv_proto = struct.pack('8B', 108, 6, 127, 0xdd, 0x00, 0x11, 0x22, 0x33)
+    data = struct.pack('<H', 0)
+    resp['payload'] = struct.pack('<BBBHH', ACTION_CATEG_PUBLIC,
+                                  GAS_INITIAL_RESPONSE,
+                                  gas['dialog_token'], 0, 0) + adv_proto + data
+    send_gas_resp(hapd, resp)
+
+    ev = dev[0].wait_event(["ANQP-QUERY-DONE"], timeout=5)
+    if ev is None:
+        raise Exception("ANQP query for icon not completed")
+
+    wait_osu_fetch_completed(dev)
+
+def run_fetch_osu(hapd, dev, bssid, note, prov):
+    start_osu_fetch(hapd, dev, bssid, note)
+    handle_osu_prov_fetch(hapd, dev, prov)
+    wait_osu_fetch_completed(dev)
 
 def test_ap_hs20_ft(dev, apdev):
     """Hotspot 2.0 connection with FT"""
@@ -4187,6 +4814,103 @@ def test_ap_hs20_interworking_oom(dev, apdev):
                 raise Exception("ANQP did not start")
             wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
 
+def test_ap_hs20_no_cred_connect(dev, apdev):
+    """Hotspot 2.0 and connect attempt without credential"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dev[0].scan_for_bss(bssid, freq="2412")
+    if "FAIL" not in dev[0].request("INTERWORKING_CONNECT " + bssid):
+        raise Exception("Unexpected INTERWORKING_CONNECT success")
+
+def test_ap_hs20_no_rsn_connect(dev, apdev):
+    """Hotspot 2.0 and connect attempt without RSN"""
+    bssid = apdev[0]['bssid']
+    params = hostapd.wpa_params(ssid="test-hs20")
+    params['wpa_key_mgmt'] = "WPA-EAP"
+    params['ieee80211w'] = "1"
+    params['ieee8021x'] = "1"
+    params['auth_server_addr'] = "127.0.0.1"
+    params['auth_server_port'] = "1812"
+    params['auth_server_shared_secret'] = "radius"
+    params['interworking'] = "1"
+    params['roaming_consortium'] = [ "112233", "1020304050", "010203040506",
+                                     "fedcba" ]
+    params['nai_realm'] = [ "0,example.com,13[5:6],21[2:4][5:7]",
+                            "0,another.example.com" ]
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dev[0].scan_for_bss(bssid, freq="2412")
+
+    id = dev[0].add_cred_values({ 'realm': "example.com",
+                                  'username': "test",
+                                  'password': "secret",
+                                  'domain': "example.com",
+                                  'roaming_consortium': "112233",
+                                  'eap': 'TTLS' })
+
+    interworking_select(dev[0], bssid, freq=2412, no_match=True)
+    if "FAIL" not in dev[0].request("INTERWORKING_CONNECT " + bssid):
+        raise Exception("Unexpected INTERWORKING_CONNECT success")
+
+def test_ap_hs20_no_match_connect(dev, apdev):
+    """Hotspot 2.0 and connect attempt without matching cred"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dev[0].scan_for_bss(bssid, freq="2412")
+
+    id = dev[0].add_cred_values({ 'realm': "example.org",
+                                  'username': "test",
+                                  'password': "secret",
+                                  'domain': "example.org",
+                                  'roaming_consortium': "112234",
+                                  'eap': 'TTLS' })
+
+    interworking_select(dev[0], bssid, freq=2412, no_match=True)
+    if "FAIL" not in dev[0].request("INTERWORKING_CONNECT " + bssid):
+        raise Exception("Unexpected INTERWORKING_CONNECT success")
+
+def test_ap_hs20_multiple_home_cred(dev, apdev):
+    """Hotspot 2.0 and select with multiple matching home credentials"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    params['nai_realm'] = [ "0,example.com,13[5:6],21[2:4][5:7]" ]
+    params['domain_name'] = "example.com"
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    bssid2 = apdev[1]['bssid']
+    params = hs20_ap_params(ssid="test-hs20-other")
+    params['hessid'] = bssid2
+    params['nai_realm'] = [ "0,example.org,13[5:6],21[2:4][5:7]" ]
+    params['domain_name'] = "example.org"
+    hapd2 = hostapd.add_ap(apdev[1], params)
+
+    dev[0].hs20_enable()
+    dev[0].scan_for_bss(bssid2, freq="2412")
+    dev[0].scan_for_bss(bssid, freq="2412")
+    id = dev[0].add_cred_values({ 'realm': "example.com",
+                                  'priority': '2',
+                                  'username': "hs20-test",
+                                  'password': "password",
+                                  'domain': "example.com" })
+    id2 = dev[0].add_cred_values({ 'realm': "example.org",
+                                   'priority': '3',
+                                   'username': "hs20-test",
+                                   'password': "password",
+                                   'domain': "example.org" })
+    dev[0].request("INTERWORKING_SELECT auto freq=2412")
+    ev = dev[0].wait_connected(timeout=15)
+    if bssid2 not in ev:
+        raise Exception("Connected to incorrect network")
+
 def test_ap_hs20_anqp_invalid_gas_response(dev, apdev):
     """Hotspot 2.0 network selection and invalid GAS response"""
     bssid = apdev[0]['bssid']
@@ -4309,3 +5033,327 @@ def test_ap_hs20_anqp_invalid_gas_response(dev, apdev):
             raise Exception("No ANQP-QUERY-DONE seen")
         if "result=SUCCESS" not in ev:
             raise Exception("Unexpected result: " + ev)
+
+def test_ap_hs20_set_profile_failures(dev, apdev):
+    """Hotspot 2.0 and failures during profile configuration"""
+    bssid = apdev[0]['bssid']
+    params = hs20_ap_params()
+    params['hessid'] = bssid
+    params['anqp_3gpp_cell_net'] = "555,444"
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dev[0].scan_for_bss(bssid, freq="2412")
+
+    id = dev[0].add_cred_values({ 'realm': "example.com",
+                                  'domain': "example.com",
+                                  'username': "test",
+                                  'password': "secret",
+                                  'eap': 'TTLS' })
+    interworking_select(dev[0], bssid, "home", freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE ssid->eap.eap_methods = os_malloc()")
+    with alloc_fail(dev[0], 1, "interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].remove_cred(id)
+
+    id = dev[0].add_cred_values({ 'realm': "example.com",
+                                  'domain': "example.com",
+                                  'username': "hs20-test-with-domain@example.com",
+                                  'password': "password" })
+    interworking_select(dev[0], bssid, "home", freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE anon = os_malloc()")
+    with alloc_fail(dev[0], 1, "interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE Successful connection with cred->username including realm")
+    dev[0].request("INTERWORKING_CONNECT " + bssid)
+    dev[0].wait_connected()
+    dev[0].remove_cred(id)
+    dev[0].wait_disconnected()
+
+    id = dev[0].add_cred_values({ 'realm': "example.com",
+                                  'domain': "example.com",
+                                  'username': "hs20-test",
+                                  'password': "password" })
+    interworking_select(dev[0], bssid, "home", freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE anon = os_malloc() (second)")
+    with alloc_fail(dev[0], 1, "interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    with alloc_fail(dev[0], 1, "wpa_config_add_network;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    with alloc_fail(dev[0], 1, "=interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set(eap)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_eap;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set(TTLS-NON_EAP_MSCHAPV2-phase2)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_str;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].remove_cred(id)
+
+    id = dev[0].add_cred_values({ 'roaming_consortium': "112233",
+                                  'domain': "example.com",
+                                  'username': "hs20-test",
+                                  'password': "password",
+                                  'eap': 'TTLS',
+                                  'phase2': "auth=MSCHAPV2" })
+    interworking_select(dev[0], bssid, "home", freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE anon = os_strdup()")
+    with alloc_fail(dev[0], 2, "interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set_quoted(anonymous_identity)")
+    with alloc_fail(dev[0], 1, "=wpa_config_set_quoted;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE Successful connection with cred->realm not included")
+    dev[0].request("INTERWORKING_CONNECT " + bssid)
+    dev[0].wait_connected()
+    dev[0].remove_cred(id)
+    dev[0].wait_disconnected()
+
+    id = dev[0].add_cred_values({ 'roaming_consortium': "112233",
+                                  'domain': "example.com",
+                                  'realm': "example.com",
+                                  'username': "user",
+                                  'password': "password",
+                                  'eap': 'PEAP' })
+    interworking_select(dev[0], bssid, "home", freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE id = os_strdup()")
+    with alloc_fail(dev[0], 2, "interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set_quoted(identity)")
+    with alloc_fail(dev[0], 1, "=wpa_config_set_quoted;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].remove_cred(id)
+
+    id = dev[0].add_cred_values({ 'roaming_consortium': "112233",
+                                  'domain': "example.com",
+                                  'realm': "example.com",
+                                  'username': "user",
+                                  'password': "password",
+                                  'eap': "TTLS" })
+    interworking_select(dev[0], bssid, "home", freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE wpa_config_set_quoted(identity) (second)")
+    with alloc_fail(dev[0], 2, "=wpa_config_set_quoted;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set_quoted(password)")
+    with alloc_fail(dev[0], 3, "=wpa_config_set_quoted;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    with alloc_fail(dev[0], 1, "wpa_config_add_network;interworking_connect_roaming_consortium"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    with alloc_fail(dev[0], 1, "=interworking_connect_roaming_consortium"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].remove_cred(id)
+
+    id = dev[0].add_cred_values({ 'roaming_consortium': "112233",
+                                  'domain': "example.com",
+                                  'realm': "example.com",
+                                  'username': "user",
+                                  'eap': "PEAP" })
+    dev[0].set_cred(id, "password", "ext:password");
+    interworking_select(dev[0], bssid, "home", freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE wpa_config_set(password)")
+    with alloc_fail(dev[0], 3, "wpa_config_set;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    with alloc_fail(dev[0], 1, "interworking_set_hs20_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].remove_cred(id)
+
+    id = dev[0].add_cred_values({ 'realm': "example.com",
+                                  'domain': "example.com",
+                                  'username': "certificate-user",
+                                  'phase1': "include_tls_length=0",
+                                  'domain_suffix_match': "example.com",
+                                  'ca_cert': "auth_serv/ca.pem",
+                                  'client_cert': "auth_serv/user.pem",
+                                  'private_key': "auth_serv/user.key",
+                                  'private_key_passwd': "secret" })
+    interworking_select(dev[0], bssid, "home", freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE wpa_config_set_quoted(client_cert)")
+    with alloc_fail(dev[0], 2, "=wpa_config_set_quoted;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set_quoted(private_key)")
+    with alloc_fail(dev[0], 3, "=wpa_config_set_quoted;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set_quoted(private_key_passwd)")
+    with alloc_fail(dev[0], 4, "=wpa_config_set_quoted;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set_quoted(ca_cert)")
+    with alloc_fail(dev[0], 5, "=wpa_config_set_quoted;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set_quoted(domain_suffix_match)")
+    with alloc_fail(dev[0], 6, "=wpa_config_set_quoted;interworking_set_eap_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    with alloc_fail(dev[0], 1, "interworking_set_hs20_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].remove_cred(id)
+
+    id = dev[0].add_cred_values({ 'imsi': "555444-333222111", 'eap': "SIM",
+                                  'milenage': "5122250214c33e723a5dd523fc145fc0:981d464c7c52eb6e5036234984ad0bcf:000000000123"})
+    interworking_select(dev[0], bssid, freq=2412)
+    dev[0].dump_monitor()
+    with alloc_fail(dev[0], 1, "interworking_set_hs20_params"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set_quoted(password;milenage)")
+    with alloc_fail(dev[0], 2, "=wpa_config_set_quoted;interworking_connect_3gpp"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set(eap)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_eap;wpa_config_set;interworking_connect_3gpp"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE set_root_nai:wpa_config_set(identity)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_str;interworking_connect_3gpp"):
+            dev[0].request("INTERWORKING_CONNECT " + bssid)
+            wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].remove_cred(id)
+
+    id = dev[0].add_cred_values({ 'roaming_consortium': "112233",
+                                  'username': "user@example.com",
+                                  'password': "password" })
+    interworking_select(dev[0], bssid, freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE Interworking: No EAP method set for credential using roaming consortium")
+    dev[0].request("INTERWORKING_CONNECT " + bssid)
+    dev[0].remove_cred(id)
+
+    hapd.disable()
+    params = hs20_ap_params()
+    params['nai_realm'] = "0,example.com,25[3:26]"
+    hapd = hostapd.add_ap(apdev[0], params)
+    id = dev[0].add_cred_values({ 'realm': "example.com",
+                                  'domain': "example.com",
+                                  'username': "hs20-test",
+                                  'password': "password" })
+    interworking_select(dev[0], bssid, freq=2412)
+    dev[0].dump_monitor()
+    dev[0].request("NOTE wpa_config_set(PEAP/FAST-phase1)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_str;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set(PEAP/FAST-pac_interworking)")
+    with alloc_fail(dev[0], 2, "wpa_config_parse_str;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+    dev[0].request("NOTE wpa_config_set(PEAP/FAST-phase2)")
+    with alloc_fail(dev[0], 3, "wpa_config_parse_str;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+
+    hapd.disable()
+    params = hs20_ap_params()
+    params['nai_realm'] = "0,example.com,21"
+    hapd = hostapd.add_ap(apdev[0], params)
+    interworking_select(dev[0], bssid, freq=2412)
+    dev[0].request("NOTE wpa_config_set(TTLS-defaults-phase2)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_str;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+
+    hapd.disable()
+    params = hs20_ap_params()
+    params['nai_realm'] = "0,example.com,21[2:3]"
+    hapd = hostapd.add_ap(apdev[0], params)
+    interworking_select(dev[0], bssid, freq=2412)
+    dev[0].request("NOTE wpa_config_set(TTLS-NON_EAP_MSCHAP-phase2)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_str;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+
+    hapd.disable()
+    params = hs20_ap_params()
+    params['nai_realm'] = "0,example.com,21[2:2]"
+    hapd = hostapd.add_ap(apdev[0], params)
+    interworking_select(dev[0], bssid, freq=2412)
+    dev[0].request("NOTE wpa_config_set(TTLS-NON_EAP_CHAP-phase2)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_str;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+
+    hapd.disable()
+    params = hs20_ap_params()
+    params['nai_realm'] = "0,example.com,21[2:1]"
+    hapd = hostapd.add_ap(apdev[0], params)
+    interworking_select(dev[0], bssid, freq=2412)
+    dev[0].request("NOTE wpa_config_set(TTLS-NON_EAP_PAP-phase2)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_str;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+
+    hapd.disable()
+    params = hs20_ap_params()
+    params['nai_realm'] = "0,example.com,21[3:26]"
+    hapd = hostapd.add_ap(apdev[0], params)
+    interworking_select(dev[0], bssid, freq=2412)
+    dev[0].request("NOTE wpa_config_set(TTLS-EAP-MSCHAPV2-phase2)")
+    with alloc_fail(dev[0], 1, "wpa_config_parse_str;wpa_config_set;interworking_connect"):
+        dev[0].request("INTERWORKING_CONNECT " + bssid)
+        wait_fail_trigger(dev[0], "GET_ALLOC_FAIL")
+
+    dev[0].remove_cred(id)
+
+def test_ap_hs20_unexpected(dev, apdev):
+    """Unexpected Hotspot 2.0 AP configuration"""
+    check_eap_capa(dev[0], "MSCHAPV2")
+    bssid = apdev[0]['bssid']
+    params = hostapd.wpa_eap_params(ssid="test-hs20-fake")
+    params['wpa'] = "3"
+    params['wpa_pairwise'] = "TKIP CCMP"
+    params['rsn_pairwise'] = "CCMP"
+    #params['vendor_elements'] = 'dd07506f9a10140000'
+    params['vendor_elements'] = 'dd04506f9a10'
+    hostapd.add_ap(apdev[0], params)
+
+    dev[0].hs20_enable()
+    dev[0].scan_for_bss(bssid, freq="2412")
+    dev[0].connect("test-hs20-fake", key_mgmt="WPA-EAP", eap="TTLS",
+                   pairwise="TKIP",
+                   identity="hs20-test", password="password",
+                   ca_cert="auth_serv/ca.pem", phase2="auth=MSCHAPV2",
+                   scan_freq="2412")
+
+    dev[1].hs20_enable()
+    dev[1].scan_for_bss(bssid, freq="2412")
+    dev[1].connect("test-hs20-fake", key_mgmt="WPA-EAP", eap="TTLS",
+                   proto="WPA",
+                   identity="hs20-test", password="password",
+                   ca_cert="auth_serv/ca.pem", phase2="auth=MSCHAPV2",
+                   scan_freq="2412")
+
+    dev[2].hs20_enable()
+    dev[2].scan_for_bss(bssid, freq="2412")
+    dev[2].connect("test-hs20-fake", key_mgmt="WPA-EAP", eap="TTLS",
+                   proto="RSN", pairwise="CCMP",
+                   identity="hs20-test", password="password",
+                   ca_cert="auth_serv/ca.pem", phase2="auth=MSCHAPV2",
+                   scan_freq="2412")

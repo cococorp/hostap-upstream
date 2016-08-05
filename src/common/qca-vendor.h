@@ -102,6 +102,22 @@ enum qca_radiotap_vendor_ids {
  *	device. As an event, it indicates either the feature stopped after it
  *	was already running or feature has actually failed to start. Uses the
  *	attributes defines in enum qca_wlan_vendor_attr_p2p_listen_offload.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_SAP_CONDITIONAL_CHAN_SWITCH: After AP starts
+ *	beaconing, this sub command provides the driver, the frequencies on the
+ *	5 GHz band to check for any radar activity. Driver selects one channel
+ *	from this priority list provided through
+ *	@QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_FREQ_LIST and starts
+ *	to check for radar activity on it. If no radar activity is detected
+ *	during the channel availability check period, driver internally switches
+ *	to the selected frequency of operation. If the frequency is zero, driver
+ *	internally selects a channel. The status of this conditional switch is
+ *	indicated through an event using the same sub command through
+ *	@QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_STATUS. Attributes are
+ *	listed in qca_wlan_vendor_attr_sap_conditional_chan_switch.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_GPIO_CONFIG_COMMAND: Set GPIO pins. This uses the
+ *	attributes defined in enum qca_wlan_gpio_attr.
  */
 enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_UNSPEC = 0,
@@ -186,6 +202,8 @@ enum qca_nl80211_vendor_subcmds {
 	/* 121 - reserved for QCA */
 	QCA_NL80211_VENDOR_SUBCMD_P2P_LISTEN_OFFLOAD_START = 122,
 	QCA_NL80211_VENDOR_SUBCMD_P2P_LISTEN_OFFLOAD_STOP = 123,
+	QCA_NL80211_VENDOR_SUBCMD_SAP_CONDITIONAL_CHAN_SWITCH = 124,
+	QCA_NL80211_VENDOR_SUBCMD_GPIO_CONFIG_COMMAND = 125,
 };
 
 
@@ -403,6 +421,25 @@ enum qca_set_band {
 };
 
 /**
+ * enum qca_access_policy - Access control policy
+ *
+ * Access control policy is applied on the configured IE
+ * (QCA_WLAN_VENDOR_ATTR_CONFIG_ACCESS_POLICY_IE).
+ * To be set with QCA_WLAN_VENDOR_ATTR_CONFIG_ACCESS_POLICY.
+ *
+ * @QCA_ACCESS_POLICY_ACCEPT_UNLESS_LISTED: Deny Wi-Fi connections which match
+ *	the specific configuration (IE) set, i.e., allow all the
+ *	connections which do not match the configuration.
+ * @QCA_ACCESS_POLICY_DENY_UNLESS_LISTED: Accept Wi-Fi connections which match
+ *	the specific configuration (IE) set, i.e., deny all the
+ *	connections which do not match the configuration.
+ */
+enum qca_access_policy {
+	QCA_ACCESS_POLICY_ACCEPT_UNLESS_LISTED,
+	QCA_ACCESS_POLICY_DENY_UNLESS_LISTED,
+};
+
+/**
  * enum qca_vendor_attr_get_tsf: Vendor attributes for TSF capture
  * @QCA_WLAN_VENDOR_ATTR_TSF_CMD: enum qca_tsf_operation (u32)
  * @QCA_WLAN_VENDOR_ATTR_TSF_TIMER_VALUE: Unsigned 64 bit TSF timer value
@@ -589,8 +626,8 @@ enum qca_vendor_attr_txpower_decr_db {
 };
 
 /* Attributes for data used by
- * QCA_NL80211_VENDOR_SUBCMD_SET_CONFIGURATION and
- * QCA_NL80211_VENDOR_SUBCMD_GET_CONFIGURATION subcommands.
+ * QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION and
+ * QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION subcommands.
  */
 enum qca_wlan_vendor_attr_config {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_INVALID,
@@ -635,6 +672,62 @@ enum qca_wlan_vendor_attr_config {
 	/* 8-bit unsigned value to configure the maximum RX MPDU for
 	 * aggregation. */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_RX_MPDU_AGGREGATION,
+	/* 8-bit unsigned value to configure the Non aggregrate/11g sw
+	 * retry threshold (0 disable, 31 max). */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_NON_AGG_RETRY,
+	/* 8-bit unsigned value to configure the aggregrate sw
+	 * retry threshold (0 disable, 31 max). */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_AGG_RETRY,
+	/* 8-bit unsigned value to configure the MGMT frame
+	 * retry threshold (0 disable, 31 max). */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_MGMT_RETRY,
+	/* 8-bit unsigned value to configure the CTRL frame
+	 * retry threshold (0 disable, 31 max). */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_CTRL_RETRY,
+	/* 8-bit unsigned value to configure the propagation delay for
+	 * 2G/5G band (0~63, units in us) */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_PROPAGATION_DELAY,
+	/* Unsigned 32-bit value to configure the number of unicast TX fail
+	 * packet count. The peer is disconnected once this threshold is
+	 * reached. */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TX_FAIL_COUNT,
+	/* Attribute used to set scan default IEs to the driver.
+	 *
+	 * These IEs can be used by scan operations that will be initiated by
+	 * the driver/firmware.
+	 *
+	 * For further scan requests coming to the driver, these IEs should be
+	 * merged with the IEs received along with scan request coming to the
+	 * driver. If a particular IE is present in the scan default IEs but not
+	 * present in the scan request, then that IE should be added to the IEs
+	 * sent in the Probe Request frames for that scan request. */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_SCAN_DEFAULT_IES,
+	/* Unsigned 32-bit attribute for generic commands */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND,
+	/* Unsigned 32-bit value attribute for generic commands */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_VALUE,
+	/* Unsigned 32-bit data attribute for generic command response */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA,
+	/* Unsigned 32-bit length attribute for
+	 * QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_LENGTH,
+	/* Unsigned 32-bit flags attribute for
+	 * QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_FLAGS,
+	/* Unsigned 32-bit, defining the access policy.
+	 * See enum qca_access_policy. Used with
+	 * QCA_WLAN_VENDOR_ATTR_CONFIG_ACCESS_POLICY_IE_LIST. */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ACCESS_POLICY,
+	/* Sets the list of full set of IEs for which a specific access policy
+	 * has to be applied. Used along with
+	 * QCA_WLAN_VENDOR_ATTR_CONFIG_ACCESS_POLICY to control the access.
+	 * Zero length payload can be used to clear this access constraint. */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ACCESS_POLICY_IE_LIST,
+	/* Unsigned 32-bit, specifies the interface index (netdev) for which the
+	 * corresponding configurations are applied. If the interface index is
+	 * not specified, the configurations are attributed to the respective
+	 * wiphy. */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_IFINDEX,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
@@ -659,6 +752,47 @@ enum qca_wlan_vendor_attr_sap_config {
 	QCA_WLAN_VENDOR_ATTR_SAP_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_SAP_CONFIG_MAX =
 	QCA_WLAN_VENDOR_ATTR_SAP_CONFIG_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_sap_conditional_chan_switch - Parameters for AP
+ *					conditional channel switch
+ */
+enum qca_wlan_vendor_attr_sap_conditional_chan_switch {
+	QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_INVALID = 0,
+	/* Priority based frequency list (an array of u32 values in host byte
+	 * order) */
+	QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_FREQ_LIST = 1,
+	/* Status of the conditional switch (u32).
+	 * 0: Success, Non-zero: Failure
+	 */
+	QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_STATUS = 2,
+
+	QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_MAX =
+	QCA_WLAN_VENDOR_ATTR_SAP_CONDITIONAL_CHAN_SWITCH_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_gpio_attr - Parameters for GPIO configuration
+ */
+enum qca_wlan_gpio_attr {
+	QCA_WLAN_VENDOR_ATTR_GPIO_PARAM_INVALID = 0,
+	/* Unsigned 32-bit attribute for GPIO command */
+	QCA_WLAN_VENDOR_ATTR_GPIO_PARAM_COMMAND,
+	/* Unsigned 32-bit attribute for GPIO PIN number to configure */
+	QCA_WLAN_VENDOR_ATTR_GPIO_PARAM_PINNUM,
+	/* Unsigned 32-bit attribute for GPIO value to configure */
+	QCA_WLAN_VENDOR_ATTR_GPIO_PARAM_VALUE,
+	/* Unsigned 32-bit attribute for GPIO pull type */
+	QCA_WLAN_VENDOR_ATTR_GPIO_PARAM_PULL_TYPE,
+	/* Unsigned 32-bit attribute for GPIO interrupt mode */
+	QCA_WLAN_VENDOR_ATTR_GPIO_PARAM_INTR_MODE,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_GPIO_PARAM_LAST,
+	QCA_WLAN_VENDOR_ATTR_GPIO_PARAM_MAX =
+	QCA_WLAN_VENDOR_ATTR_GPIO_PARAM_LAST - 1
 };
 
 #endif /* QCA_VENDOR_H */

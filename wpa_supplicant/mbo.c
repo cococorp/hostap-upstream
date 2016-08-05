@@ -18,6 +18,7 @@
 #include "wpa_supplicant_i.h"
 #include "driver_i.h"
 #include "bss.h"
+#include "scan.h"
 
 /* type + length + oui + oui type */
 #define MBO_IE_HEADER 6
@@ -576,7 +577,6 @@ static int wpas_op_class_supported(struct wpa_supplicant *wpa_s,
 	if (op_class->op_class == 128) {
 		u8 channels[] = { 42, 58, 106, 122, 138, 155 };
 
-		found = 0;
 		for (i = 0; i < ARRAY_SIZE(channels); i++) {
 			if (verify_channel(mode, channels[i], op_class->bw) ==
 			    ALLOWED)
@@ -811,4 +811,5 @@ void wpas_mbo_update_cell_capa(struct wpa_supplicant *wpa_s, u8 mbo_cell_capa)
 	cell_capa[6] = mbo_cell_capa;
 
 	wpas_mbo_send_wnm_notification(wpa_s, cell_capa, 7);
+	wpa_supplicant_set_default_scan_ies(wpa_s);
 }

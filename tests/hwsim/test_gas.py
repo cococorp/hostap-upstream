@@ -388,7 +388,8 @@ def test_gas_anqp_get(dev, apdev):
              "00:11:22:33:44:55 32",
              "00:11:22:33:44:55",
              "00:11:22:33:44:55 ",
-             "00:11:22:33:44:55 0" ]
+             "00:11:22:33:44:55 0",
+             "00:11:22:33:44:55 1" ]
     for cmd in cmds:
         if "FAIL" not in dev[0].request("HS20_ANQP_GET " + cmd):
             raise Exception("Invalid HS20_ANQP_GET accepted")
@@ -402,6 +403,62 @@ def test_gas_anqp_get_oom(dev, apdev):
     with alloc_fail(dev[0], 1, "wpabuf_alloc;anqp_send_req"):
         if "FAIL" not in dev[0].request("ANQP_GET " + bssid + " 258,268,hs20:3,hs20:4"):
             raise Exception("ANQP_GET command accepted during OOM")
+    with alloc_fail(dev[0], 1, "hs20_build_anqp_req;hs20_anqp_send_req"):
+        if "FAIL" not in dev[0].request("HS20_ANQP_GET " + bssid + " 1"):
+            raise Exception("HS20_ANQP_GET command accepted during OOM")
+    with alloc_fail(dev[0], 1, "gas_query_req;hs20_anqp_send_req"):
+        if "FAIL" not in dev[0].request("HS20_ANQP_GET " + bssid + " 1"):
+            raise Exception("HS20_ANQP_GET command accepted during OOM")
+    with alloc_fail(dev[0], 1, "=hs20_anqp_send_req"):
+        if "FAIL" not in dev[0].request("REQ_HS20_ICON " + bssid + " w1fi_logo"):
+            raise Exception("REQ_HS20_ICON command accepted during OOM")
+    with alloc_fail(dev[0], 2, "=hs20_anqp_send_req"):
+        if "FAIL" not in dev[0].request("REQ_HS20_ICON " + bssid + " w1fi_logo"):
+            raise Exception("REQ_HS20_ICON command accepted during OOM")
+
+def test_gas_anqp_icon_binary_proto(dev, apdev):
+    """GAS/ANQP and icon binary protocol testing"""
+    hapd = start_ap(apdev[0])
+    bssid = apdev[0]['bssid']
+
+    dev[0].scan_for_bss(bssid, freq="2412", force_scan=True)
+    hapd.set("ext_mgmt_frame_handling", "1")
+
+    tests = [ '010000', '01000000', '00000000', '00030000', '00020000',
+              '00000100', '0001ff0100ee', '0001ff0200ee' ]
+    for test in tests:
+        dev[0].request("HS20_ICON_REQUEST " + bssid + " w1fi_logo")
+        query = gas_rx(hapd)
+        gas = parse_gas(query['payload'])
+        resp = action_response(query)
+        data = binascii.unhexlify(test)
+        data = binascii.unhexlify('506f9a110b00') + data
+        data = struct.pack('<HHH', len(data) + 4, 0xdddd, len(data)) + data
+        resp['payload'] = anqp_initial_resp(gas['dialog_token'], 0) + data
+        send_gas_resp(hapd, resp)
+        expect_gas_result(dev[0], "SUCCESS")
+
+def test_gas_anqp_hs20_proto(dev, apdev):
+    """GAS/ANQP and Hotspot 2.0 element protocol testing"""
+    hapd = start_ap(apdev[0])
+    bssid = apdev[0]['bssid']
+
+    dev[0].scan_for_bss(bssid, freq="2412", force_scan=True)
+    hapd.set("ext_mgmt_frame_handling", "1")
+
+    tests = [ '00', '0100', '0201', '0300', '0400', '0500', '0600', '0700',
+              '0800', '0900', '0a00', '0b0000000000' ]
+    for test in tests:
+        dev[0].request("HS20_ANQP_GET " + bssid + " 3,4")
+        query = gas_rx(hapd)
+        gas = parse_gas(query['payload'])
+        resp = action_response(query)
+        data = binascii.unhexlify(test)
+        data = binascii.unhexlify('506f9a11') + data
+        data = struct.pack('<HHH', len(data) + 4, 0xdddd, len(data)) + data
+        resp['payload'] = anqp_initial_resp(gas['dialog_token'], 0) + data
+        send_gas_resp(hapd, resp)
+        expect_gas_result(dev[0], "SUCCESS")
 
 def expect_gas_result(dev, result, status=None):
     ev = dev.wait_event(["GAS-QUERY-DONE"], timeout=10)

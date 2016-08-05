@@ -6998,6 +6998,34 @@ static int wpas_ctrl_iface_get_pref_freq_list(
 }
 
 
+static int wpas_ctrl_iface_driver_flags(struct wpa_supplicant *wpa_s,
+					char *buf, size_t buflen)
+{
+	int ret, i;
+	char *pos, *end;
+
+	ret = os_snprintf(buf, buflen, "%016llX:\n",
+			  (long long unsigned) wpa_s->drv_flags);
+	if (os_snprintf_error(buflen, ret))
+		return -1;
+
+	pos = buf + ret;
+	end = buf + buflen;
+
+	for (i = 0; i < 64; i++) {
+		if (wpa_s->drv_flags & (1LLU << i)) {
+			ret = os_snprintf(pos, end - pos, "%s\n",
+					  driver_flag_to_string(1LLU << i));
+			if (os_snprintf_error(end - pos, ret))
+				return -1;
+			pos += ret;
+		}
+	}
+
+	return pos - buf;
+}
+
+
 static int wpa_supplicant_pktcnt_poll(struct wpa_supplicant *wpa_s, char *buf,
 				      size_t buflen)
 {
@@ -7228,6 +7256,10 @@ static void wpa_supplicant_ctrl_iface_flush(struct wpa_supplicant *wpa_s)
 
 	eloop_cancel_timeout(wpas_network_reenabled, wpa_s, NULL);
 	wpa_s->wnmsleep_used = 0;
+
+#ifdef CONFIG_SME
+	wpa_s->sme.last_unprot_disconnect.sec = 0;
+#endif /* CONFIG_SME */
 }
 
 
@@ -9053,7 +9085,10 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		if (del_hs20_icon(wpa_s, buf + 14) < 0)
 			reply_len = -1;
 	} else if (os_strcmp(buf, "FETCH_OSU") == 0) {
-		if (hs20_fetch_osu(wpa_s) < 0)
+		if (hs20_fetch_osu(wpa_s, 0) < 0)
+			reply_len = -1;
+	} else if (os_strcmp(buf, "FETCH_OSU no-scan") == 0) {
+		if (hs20_fetch_osu(wpa_s, 1) < 0)
 			reply_len = -1;
 	} else if (os_strcmp(buf, "CANCEL_FETCH_OSU") == 0) {
 		hs20_cancel_fetch_osu(wpa_s);
@@ -9264,6 +9299,9 @@ char * wpa_supplicant_ctrl_iface_process(struct wpa_supplicant *wpa_s,
 		if (wpa_supplicant_ctrl_iface_autoscan(wpa_s, buf + 9))
 			reply_len = -1;
 #endif /* CONFIG_AUTOSCAN */
+	} else if (os_strcmp(buf, "DRIVER_FLAGS") == 0) {
+		reply_len = wpas_ctrl_iface_driver_flags(wpa_s, reply,
+							 reply_size);
 #ifdef ANDROID
 	} else if (os_strncmp(buf, "DRIVER ", 7) == 0) {
 		reply_len = wpa_supplicant_driver_cmd(wpa_s, buf + 7, reply,
