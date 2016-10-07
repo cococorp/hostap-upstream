@@ -845,6 +845,7 @@ OBJS += ../src/ap/authsrv.o
 OBJS += ../src/ap/ap_config.o
 OBJS += ../src/utils/ip_addr.o
 OBJS += ../src/ap/sta_info.o
+OBJS += ../src/ap/sta_blacklist.o
 OBJS += ../src/ap/tkip_countermeasures.o
 OBJS += ../src/ap/ap_mlme.o
 OBJS += ../src/ap/ieee802_1x.o
