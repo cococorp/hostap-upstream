@@ -19,6 +19,7 @@ struct radius_server_data;
 struct upnp_wps_device_sm;
 struct hostapd_data;
 struct sta_info;
+struct sta_blacklist;
 struct ieee80211_ht_capabilities;
 struct full_dynamic_vlan;
 enum wps_event;
@@ -120,6 +121,7 @@ struct hostapd_data {
 	struct hostapd_bss_config *conf;
 	int interface_added; /* virtual interface added for this BSS */
 	unsigned int started:1;
+	struct sta_blacklist *blacklist; /* Client station blacklist support */
 	unsigned int disabled:1;
 	unsigned int reenable_beacon:1;
 

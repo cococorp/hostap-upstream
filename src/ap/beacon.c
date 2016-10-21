@@ -29,6 +29,7 @@
 #include "beacon.h"
 #include "hs20.h"
 #include "dfs.h"
+#include "sta_blacklist.h"
 
 
 #ifdef NEED_AP_MLME
@@ -837,6 +838,11 @@ void handle_probe_req(struct hostapd_data *hapd,
 		return;
 	}
 #endif /* CONFIG_P2P */
+
+	if(sta_blacklist_present(hapd, mgmt->sa)) {
+		wpa_printf(MSG_DEBUG, "ignoring probe request from " MACSTR " due to blacklist", MAC2STR(mgmt->sa));
+		return;
+	}
 
 	/* TODO: verify that supp_rates contains at least one matching rate
 	 * with AP configuration */
