@@ -1495,15 +1495,18 @@ static u16 check_ext_capab(struct hostapd_data *hapd, struct sta_info *sta,
 	}
 #endif /* CONFIG_INTERWORKING */
 #ifdef CONFIG_WNM
-	// BIT#19 BSS Transition
-	// The STA sets the BSS Transition field to 1 when
-	// dot11MgmtOptionBSSTransitionActivated is true, and sets it to 0 otherwise. See
-	// 10.23.6.
+	/* 
+	 * BIT#19 BSS Transition
+	 * The STA sets the BSS Transition field to 1 when
+	 * dot11MgmtOptionBSSTransitionActivated is true, and sets it to 0 otherwise.
+	 * See 10.23.6.
+	 */
 	if (ext_capab_ie_len >= 3) {
 		if (ext_capab_ie[2] & 0x8) {
 			sta->dot11MgmtOptionBSSTransitionActivated = 1;
 			hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-				       HOSTAPD_LEVEL_INFO, "WNM: dot11MgmtOptionBSSTransitionActivated is true\n");
+					   HOSTAPD_LEVEL_INFO,
+					   "WNM: dot11MgmtOptionBSSTransitionActivated is true\n");
 		}
 	}
 #endif

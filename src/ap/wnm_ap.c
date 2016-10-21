@@ -1,7 +1,7 @@
 /*
  * hostapd - WNM
  * Copyright (c) 2011-2014, Qualcomm Atheros, Inc.
- * Copyright (c) 2015, CoCo Communications, Inc.
+ * Copyright (c) 2015-2016, CoCo Communications Corp.
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -347,7 +347,8 @@ static void ieee802_11_rx_bss_trans_mgmt_resp(struct hostapd_data *hapd,
 	struct sta_info *sta;
 
 	if (len < 3) {
-		wpa_printf(MSG_DEBUG, "WNM: Ignore too short BSS Transition Management Response from "
+		wpa_printf(MSG_DEBUG,
+			   "WNM: Ignore too short BSS Transition Management Response from "
 			   MACSTR, MAC2STR(addr));
 		return;
 	}
@@ -360,9 +361,9 @@ static void ieee802_11_rx_bss_trans_mgmt_resp(struct hostapd_data *hapd,
 
 	hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 			   HOSTAPD_LEVEL_INFO, "WNM: BSS Transition Management Response from "
-		   MACSTR " dialog_token=%u status_code=%u "
-		   "bss_termination_delay=%u", MAC2STR(addr), dialog_token,
-		   status_code, bss_termination_delay);
+		       MACSTR " dialog_token=%u status_code=%u "
+		       "bss_termination_delay=%u", MAC2STR(addr), dialog_token,
+		       status_code, bss_termination_delay);
 
 	if (status_code == WNM_BSS_TM_ACCEPT) {
 		if (end - pos < ETH_ALEN) {
@@ -370,14 +371,16 @@ static void ieee802_11_rx_bss_trans_mgmt_resp(struct hostapd_data *hapd,
 			return;
 		}
 		hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
-			HOSTAPD_LEVEL_INFO,  "WNM: BSS Transition Accepted - target BSSID: " MACSTR,
-			MAC2STR(pos));
+				   HOSTAPD_LEVEL_INFO,
+				   "WNM: BSS Transition Accepted - target BSSID: " MACSTR,
+				   MAC2STR(pos));
 
 		sta = ap_get_sta(hapd, addr);
 		if (sta == NULL) {
 			hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
-				HOSTAPD_LEVEL_WARNING, "sta "MACSTR" not found for BSS transition response",
-				MAC2STR(addr));
+					   HOSTAPD_LEVEL_WARNING,
+					   "sta "MACSTR" not found for BSS transition response",
+					   MAC2STR(addr));
 			return;
 		}
 
@@ -390,7 +393,7 @@ static void ieee802_11_rx_bss_trans_mgmt_resp(struct hostapd_data *hapd,
 		ieee802_1x_free_station(hapd, sta);
 
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-					   HOSTAPD_LEVEL_INFO, "WNM: disassociated due to accepted BSS transition request");
+				   HOSTAPD_LEVEL_INFO, "WNM: disassociated due to accepted BSS transition request");
 
 		sta->timeout_next = STA_DEAUTH;
 		eloop_cancel_timeout(ap_handle_timer, hapd, sta);
@@ -400,7 +403,8 @@ static void ieee802_11_rx_bss_trans_mgmt_resp(struct hostapd_data *hapd,
 		pos += ETH_ALEN;
 	} else if (status_code == WNM_BSS_TM_REJECT_NO_SUITABLE_CANDIDATES) {
 		hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
-					   HOSTAPD_LEVEL_INFO,  "WNM: BSS Transition Rejected - No Suitable Candidates");
+				   HOSTAPD_LEVEL_INFO,
+				   "WNM: BSS Transition Rejected - No Suitable Candidates");
 	} else {
 		wpa_msg(hapd->msg_ctx, MSG_INFO, BSS_TM_RESP MACSTR
 			" status_code=%u bss_termination_delay=%u",
@@ -666,15 +670,15 @@ int wnm_send_bss_tm_req(struct hostapd_data *hapd, struct sta_info *sta,
 }
 
 /*
-802.11-2012 10.23.6.3 BSS transition management request
-The AP may send an unsolicited BSS Transition
-Management Request frame to a non-AP STA at any time if the non-AP STA indicates that it supports the
-BSS Transition Management capability in the Extended Capabilities element.
-A non-AP STA that supports BSS transition management shall
-respond to an individually addressed BSS Transition Management Request frame with a BSS Transition
-Management Response frame.
-This version will create the neighbor report using the passed in bssid and channel
-*/
+ * 802.11-2012 10.23.6.3 BSS transition management request
+ * The AP may send an unsolicited BSS Transition
+ * Management Request frame to a non-AP STA at any time if the non-AP STA indicates that it supports the
+ * BSS Transition Management capability in the Extended Capabilities element.
+ * A non-AP STA that supports BSS transition management shall
+ * respond to an individually addressed BSS Transition Management Request frame with a BSS Transition
+ * Management Response frame.
+ * This version will create the neighbor report using the passed in bssid and channel
+ */
 int wnm_send_bss_tm_req2(struct hostapd_data *hapd,
 		struct sta_info *sta, int disassoc_timer,
 		const u8 *bssid, u8 ap_channel)
@@ -687,18 +691,21 @@ int wnm_send_bss_tm_req2(struct hostapd_data *hapd,
 	u8* pos = NULL;
 
 	/*
-	802.11-2012
-	The BSS Transition Candidate List Entries field of a BSS Transition Management Response frame contains
-	zero or more Neighbor Report elements describing the non-AP STA’s preferences for target BSS
-	candidates. The Preference field value of a Neighbor Report element used in a BSS Transition Management
-	Response frame shall be between 1 and 255. The value of 0 is reserved. The values between 1 and 255
-	provide the indication of order, with 255 indicating the most preferred BSS within the given candidate list,
-	decreasing numbers representing decreasing preference relative only to entries with lower values of the
-	Preference field, and equal numbers representing equal preference. The non-AP STA should not list any
-	BSS that is not considered as a target BSS candidate.
-
-	Contains the description of candidate BSS transition APs and their capabilities as described in 8.4.2.39.
-	*/
+	 * 802.11-2012
+	 * The BSS Transition Candidate List Entries field of a BSS Transition
+	 * Management Response frame contains zero or more Neighbor Report elements
+	 * describing the non-AP STA’s preferences for target BSS candidates. The
+	 * Preference field value of a Neighbor Report element used in a BSS
+	 * Transition Management Response frame shall be between 1 and 255. The
+	 * value of 0 is reserved. The values between 1 and 255 provide the 
+	 * indication of order, with 255 indicating the most preferred BSS within
+	 * the given candidate list, decreasing numbers representing decreasing 
+	 * preference relative only to entries with lower values of the Preference
+	 * field, and equal numbers representing equal preference. The non-AP STA
+	 * should not list any BSS that is not considered as a target BSS candidate.
+	 * Contains the description of candidate BSS transition APs and their
+	 * capabilities as described in 8.4.2.39.
+	 */
 	/* add 3 octets for candidate preference */
 	report_ie = (struct wnm_neighbor_report_element*)
 			os_zalloc(sizeof(struct wnm_neighbor_report_element) + 3);
@@ -720,34 +727,24 @@ int wnm_send_bss_tm_req2(struct hostapd_data *hapd,
 						  &op_class, &channel) != NUM_HOSTAPD_MODES)
 		report_ie->operating_class = op_class;
 
-	/*
-	 dot11RMNeighborReportPhyType OBJECT-TYPE
-		SYNTAX INTEGER {
-	 	 fhss(1),
-	 	 dsss(2),
-	 	 irbaseband(3),
-	 	 ofdm(4),
-	 	 hrdsss(5),
-	 	 erp(6),
-	 	 ht(7) }
-	 	 report_ie.PHY_type =
-	 */
+
 	report_ie->channel_number = ap_channel;
 
 	/*
-	The AP Reachability field indicates whether the AP identified by this BSSID is reachable by the STA that
-	requested the neighbor report. For example, the AP identified by this BSSID is reachable for the exchange of
-	preauthentication frames as described in 11.5.9.2
-
-	The Security bit, if 1, indicates that the AP identified by this BSSID supports the same security provisioning
-	as used by the STA in its current association.
-	*/
+	 * The AP Reachability field indicates whether the AP identified by this BSSID
+	 * is reachable by the STA that	requested the neighbor report. For example,
+	 * the AP identified by this BSSID is reachable for the exchange of
+	 * preauthentication frames as described in 11.5.9.2.
+	 * The Security bit, if 1, indicates that the AP identified by this BSSID
+	 * supports the same security provisioning as used by the STA in its current
+	 * association.
+	 */
 	report_ie->bssid_info[0] = WNM_REACHABILITY_REACHABLE | WNM_SECURITY;
 
 	pos = (u8*) report_ie;
 	pos += report_ie_len;
 
-	/*  BSS Transition Candidate Preference subelement field */
+	/* BSS Transition Candidate Preference subelement field */
 	*pos++ = 3;   /* Subelement ID */
 	*pos++ = 1;   /* length */
 	*pos++ = 255; /* Preference */

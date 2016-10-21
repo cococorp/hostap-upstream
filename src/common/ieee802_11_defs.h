@@ -1447,20 +1447,21 @@ struct wnm_neighbor_report_element {
 	u8 eid;     /* WLAN_EID_NEIGHBOR_REPORT */
 	u8 len;
 	u8 bssid[6];
-	/*
-	u8 info_ap_reachability:2;
-	u8 info_security:1;
-	u8 info_key_scope:1;
-	u8 info_spectrum_management:1;
-	u8 info_QoS:1;
-	u8 info_APSD:1;
-	u8 info_rm:1;
-	u8 info_delayed_block_ack:1;
-	u8 info_immediate_block_ack:1;
-	u8 info_mobility_domain:1;
-	u8 info_high_throughput:1;
-	u8 info_reserved1:4;
-	*/
+	/* 
+	 * bssid_info bits
+	 * u8 info_ap_reachability:2;
+	 * u8 info_security:1;
+	 * u8 info_key_scope:1;
+	 * u8 info_spectrum_management:1;
+	 * u8 info_QoS:1;
+	 * u8 info_APSD:1;
+	 * u8 info_rm:1;
+	 * u8 info_delayed_block_ack:1;
+	 * u8 info_immediate_block_ack:1;
+	 * u8 info_mobility_domain:1;
+	 * u8 info_high_throughput:1;
+	 * u8 info_reserved1:4;
+	 */
 	u8 bssid_info[4];
 	u8 operating_class;
 	u8 channel_number;
@@ -1470,9 +1471,9 @@ struct wnm_neighbor_report_element {
 
 /* IEEE 802.11-2012 Table 8-115 Optional subelement IDs for neighbor report */
 struct wnm_neighbor_report_candidate_preference_subelement {
-	u8 sub_eid; // 3
-	u8 len; // 1
-	u8 preference; // 0 is ignore, 255 is highest
+	u8 sub_eid; /* 3 */
+	u8 len; /* 1 */
+ 	u8 preference; /* 0 is ignore, 255 is highest */
 } STRUCT_PACKED;
 
 /* IEEE 802.11-2012 - 8.4.2.38 AP Channel Report element */

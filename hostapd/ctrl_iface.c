@@ -1070,6 +1070,7 @@ static int hostapd_ctrl_iface_bss_tm_req(struct hostapd_data *hapd,
 	return ret;
 }
 
+
 static int hostapd_ctrl_iface_bss_transition(struct hostapd_data *hapd,
 					   const char *cmd)
 {
