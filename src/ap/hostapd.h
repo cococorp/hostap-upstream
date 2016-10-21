@@ -121,8 +121,7 @@ struct hostapd_data {
 	struct hostapd_bss_config *conf;
 	int interface_added; /* virtual interface added for this BSS */
 	unsigned int started:1;
-	/* Client station blacklist support */
-	struct sta_blacklist *blacklist;
+	struct sta_blacklist *blacklist; /* Client station blacklist support */
 	unsigned int disabled:1;
 	unsigned int reenable_beacon:1;
 
