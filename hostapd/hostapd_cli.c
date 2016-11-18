@@ -1477,7 +1477,8 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "wps_get_status", hostapd_cli_cmd_wps_get_status, NULL,
 	  "= show current WPS status" },
 #endif /* CONFIG_WPS */
-	{ "bss_transition", hostapd_cli_cmd_bss_transition, NULL, NULL },
+	{ "bss_transition", hostapd_cli_cmd_bss_transition, NULL,
+	  "<addr> <beacon timer count> <AP addr> <AP channel> disassociate a WNM station telling the station which AP to connect to" },
 	{ "disassoc_imminent", hostapd_cli_cmd_disassoc_imminent, NULL, NULL },
 	{ "ess_disassoc", hostapd_cli_cmd_ess_disassoc, NULL, NULL },
 	{ "bss_tm_req", hostapd_cli_cmd_bss_tm_req, NULL, NULL },
